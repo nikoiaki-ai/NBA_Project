@@ -1,0 +1,97 @@
+Seasons To Collect: 
+2022/23 - 2024/25, 2025-2026, 2026-27 (live)
+We want the segment 2022/23 - 24/25 because it gives historical training data.
+2025-2025 provides recent training and validation for the previous segments
+Current season to be able to continously generate new predictions throughout each game.
+
+Process: 
+1. Extract data
+2. Validate 
+3. Store 
+4. Transform 
+5. Update
+
+Start: 
+use nba_api github dataset for live and historical data. 
+pandas to transform data 
+use parquet bc it offers nested data, is more efficient, and offers independent column reading
+DuckDB for data querying 
+
+Good Points:
+Distinguish between-
+Offensive contribution per unit of playing time
+Expected total contribution, given likely minutes
+
+Features: 
+Offensive Efficieny, needs to be considered with volume and turnovers:
+TS% = PTS/2(FGA + 0.44 * FTA), O.E. = f(TS%, TOV, Possesions)
+
+Offensive Contribution:
+f(PTS, AST, OREB, MIN)
+One Method is OffRtg = (Points Produced/Posessions) * 100, for players
+For team he states: eFG% (w=0.4), TOV% (w=0.25), ORB% (w=0.2), FTR (w=0.15)
+
+Possesions:
+ScPoss = (FG_Part + AST_Part + FT_Part) * (1 - (Team_ORB / Team_Scoring_Poss) * Team_ORB_Weight * Team_Play%) + ORB_Part
+
+Where
+
+FG_Part = FGM * (1 - 0.5 * ((PTS - FTM) / (2 * FGA)) * qAST)
+
+qAST = ((MP / (Team_MP / 5)) * (1.14 * ((Team_AST - AST) / Team_FGM))) + ((((Team_AST / Team_MP) * MP * 5 - AST) / ((Team_FGM / Team_MP) * MP * 5 - FGM)) * (1 - (MP / (Team_MP / 5))))
+
+AST_Part = 0.5 * (((Team_PTS - Team_FTM) - (PTS - FTM)) / (2 * (Team_FGA - FGA))) * AST
+
+FT_Part = (1-(1-(FTM/FTA))^2)*0.4*FTA
+
+Team_Scoring_Poss = Team_FGM + (1 - (1 - (Team_FTM / Team_FTA))^2) * Team_FTA * 0.4
+
+Team_ORB_Weight = ((1 - Team_ORB%) * Team_Play%) / ((1 - Team_ORB%) * Team_Play% + Team_ORB% * (1 - Team_Play%))
+
+Team_ORB% = Team_ORB / (Team_ORB + (Opponent_TRB - Opponent_ORB))
+
+Team_Play% = Team_Scoring_Poss / (Team_FGA + Team_FTA * 0.4 + Team_TOV)
+
+ORB_Part = ORB * Team_ORB_Weight * Team_Play%
+
+FGxPoss = (FGA - FGM) * (1 - 1.07 * Team_ORB%)
+
+FTxPoss = ((1 - (FTM / FTA))^2) * 0.4 * FTA
+
+Total Possessions are then computed like so:
+
+TotPoss = ScPoss + FGxPoss + FTxPoss + TOV
+Now, Individual Points Produced must also be calculated:
+
+PProd = (PProd_FG_Part + PProd_AST_Part + FTM) * (1 - (Team_ORB / Team_Scoring_Poss) * Team_ORB_Weight * Team_Play%) + PProd_ORB_Part
+where:
+
+PProd_FG_Part = 2 * (FGM + 0.5 * 3PM) * (1 - 0.5 * ((PTS - FTM) / (2 * FGA)) * qAST)
+PProd_AST_Part = 2 * ((Team_FGM - FGM + 0.5 * (Team_3PM - 3PM)) / (Team_FGM - FGM)) * 0.5 * (((Team_PTS - Team_FTM) - (PTS - FTM)) / (2 * (Team_FGA - FGA))) * AST
+PProd_ORB_Part = ORB * Team_ORB_Weight * Team_Play% * (Team_PTS / (Team_FGM + (1 - (1 - (Team_FTM / Team_FTA))^2) * 0.4 * Team_FTA))
+
+After all of that, we can finally calculate the player's individual Offensive Rating:
+
+ORtg = 100 * (PProd / TotPoss)
+
+EPAA and Bayesian Framework (https://arxiv.org/html/2405.10453v1): 
+K = regions
+I = team 
+N = # of shots attempted in region k
+M = # Number of successful shots in region k 
+w_i = latent shot selection cluster 
+z_i = latent shot accuracy cluster 
+L = number of items in w_i
+J = number of items in z_i
+P_k_w = Probability of selecting region k, given selection cluster w_i
+q_k_z = Probability of making a shot in region k, given accuracy cluster z_i
+
+clusters are inferred from the observed data, not assigned beforehand
+
+Multinomial distributions - This models how a team's or player's total shot attempts are distributed across regions. 
+Binomial Distribution - This models how many of those attempts are successful.
+
+
+
+Then with these metrics we can take distributions that give us different things we want to focus on for the whole model. 
+Then, when we have clusters for both team and player regions we can derive the expected points given N shots
