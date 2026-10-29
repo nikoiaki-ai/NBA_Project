@@ -1,4 +1,4 @@
-"""Niko's Picks — NBA predictions and DraftKings moneyline EV.
+"""OutcomeLab — NBA predictions and market-implied proabability EV.
 
 Place this file in the New_NBA project root and run:
     python -m streamlit run app.py
@@ -8,8 +8,6 @@ The live predictor and EV logic are included in this file; no changes to
 src/models/predict_game_outcomes.py are required for this dashboard.
 
 Manual odds path: data/raw/odds/draftkings_YYYY-MM-DD.csv
-Columns: game_date,away_team,home_team,away_moneyline,home_moneyline,sportsbook
-Optional column: captured_at (an ISO timestamp with timezone).
 """
 from __future__ import annotations
 
@@ -31,7 +29,7 @@ from src.features.game_outcome_f import (
 
 
 st.set_page_config(
-    page_title="Niko's Picks | NBA Intelligence",
+    page_title="OutcomeLab NBA Predictions",
     page_icon="🏀",
     layout="wide",
     initial_sidebar_state="expanded",
