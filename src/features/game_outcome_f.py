@@ -1,5 +1,9 @@
 
 from pathlib import Path
+from src.features.elo_features import (
+    add_elo_features,
+    load_elo_params,
+)
 
 import numpy as np
 import pandas as pd
@@ -10,12 +14,46 @@ RAW_DIR = ROOT / "data/raw/team_game_logs"
 OUTPUT_PATH = ROOT / "data/processed/game_outcomes.parquet"
 
 ROLLING_STATS = [
-    "PTS", "FGA", "FG3A", "FTA",
-    "REB", "AST", "TOV",
-    "FG_PCT", "FG3_PCT", "FT_PCT",
-    "PLUS_MINUS", "win",
-    "off_rating", "def_rating",
-    "net_rating", "pace",
+    #Scoring & Shooting
+    "PTS",
+    "FGM",
+    "FGA",
+    "FG3M",
+    "FG3A",
+    "FTM",
+    "FTA",
+    "FG_PCT",
+    "FG3_PCT",
+    "FT_PCT",
+
+    #Rebounds
+    "OREB",
+    "DREB",
+    "REB",
+
+    #Playmaking & Defense
+    "STL",
+    "AST",
+    "BLK",
+
+    #Negatives
+    "TOV",
+    "PF",
+
+    #Result & Margin
+    "PLUS_MINUS",
+    "win",
+
+    #Derived Metrics
+    "off_rating",
+    "def_rating",
+    "net_rating",
+    "pace",
+    "efg_pct",
+    "tov_pct",
+    "orb_pct",
+    "ft_rate",
+
 ]
 
 WINDOWS = [5, 10]
@@ -65,6 +103,13 @@ def load_logs():
 def add_team_features(df):
     df = df.copy()
 
+    elo_params = load_elo_params()
+
+    df = add_elo_features(
+        df,
+        elo_params,
+    )
+
     possessions = 0.96 * (
     df["FGA"]
     + df["TOV"]
@@ -82,7 +127,7 @@ def add_team_features(df):
 
     # Obtain opponent points through the two-row game pairing.
     game_totals = df.groupby("GAME_ID")[
-        ["PTS", "estimated_possessions"]
+        ["PTS", "estimated_possessions", "DREB"]
     ].transform("sum")
 
     game_counts = df.groupby("GAME_ID")["TEAM_ID"].transform("size")
@@ -94,6 +139,11 @@ def add_team_features(df):
     df["opp_possessions"] = (
         game_totals["estimated_possessions"]
         - df["estimated_possessions"]
+    ).where(game_counts == 2)
+
+    df["opp_dreb"] = (
+        game_totals["DREB"]
+        - df["DREB"]
     ).where(game_counts == 2)
 
     df["def_rating"] = (
@@ -109,6 +159,34 @@ def add_team_features(df):
         df["estimated_possessions"]
         * 48
         / game_minutes
+    )
+
+    #Four Factors style stats
+    df["efg_pct"] = (
+        df["FGM"]
+        + 0.5 * df["FG3M"]
+    ) / df["FGA"].replace(0, np.nan)
+
+    df["tov_pct"] = (
+        df["TOV"]
+        / (
+            df["FGA"]
+            + 0.44 * df["FTA"]
+            + df["TOV"]
+        ).replace(0, np.nan)
+    )
+
+    df["orb_pct"] = (
+        df["OREB"]
+        / (
+            df["OREB"]
+            + df["opp_dreb"]
+        ).replace(0, np.nan)
+    )
+
+    df["ft_rate"] = (
+        df["FTA"]
+        / df["FGA"].replace(0, np.nan)
     )
 
     # Sort each team's games chronologically.
@@ -189,7 +267,7 @@ def build_matchups(df):
         col for col in df.columns
         if (
             "_avg_" in col
-            or col in ["games_prior", "rest_days"]
+            or col in ["games_prior", "rest_days", "team_pregame_elo", "elo_win_prob"]
         )
     ]
 

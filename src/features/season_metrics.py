@@ -10,6 +10,13 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 OUTPUT_DIR = PROJECT_ROOT / "data" / "raw" / "team_advanced"
 
 SEASONS = [
+    "2015-16",
+    "2016-17",
+    "2017-18",
+    "2018-19",
+    "2019-20",
+    "2020-21",
+    "2021-22",
     "2022-23",
     "2023-24",
     "2024-25",

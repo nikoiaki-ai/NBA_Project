@@ -1,6 +1,6 @@
 
 from pathlib import Path
-from copy import deepcopy
+from sklearn.base import clone
 
 import joblib
 import numpy as np
@@ -82,6 +82,12 @@ def main():
 
     for name in BASE_NAMES:
         saved = joblib.load(MODEL_DIR / f"{name}.joblib")
+        if saved["features"] != features:
+            raise ValueError(
+                f"{name}: saved features differ from the current dataset. "
+                "Retrain the base models before stacking."
+    )
+        
         final_pipeline = saved["pipeline"]
 
         print(f"\nGenerating OOF predictions: {name}")
@@ -89,7 +95,7 @@ def main():
         for fold_num, (fit_idx, predict_idx) in enumerate(
             folds, start=1
         ):
-            fold_model = deepcopy(final_pipeline)
+            fold_model = clone(final_pipeline)
 
             fold_model.fit(
                 X.iloc[fit_idx],
@@ -128,11 +134,31 @@ def main():
 
     # Compare small MLP architectures using an internal
     # chronological split of the OOF prediction matrix.
-    ordered_indices = complete_oof.index.to_numpy()
-    cutoff = int(len(ordered_indices) * 0.8)
+    oof_dates = df.loc[complete_oof.index, "GAME_DATE"]
+    unique_dates = np.sort(oof_dates.unique())
 
-    fit_ids = ordered_indices[:cutoff]
-    check_ids = ordered_indices[cutoff:]
+    if len(unique_dates) < 2:
+        raise ValueError(
+            "Not enough dates for the stacker's internal split"
+        )
+
+    cutoff = max(
+        1,
+        min(
+            int(len(unique_dates) * 0.8),
+            len(unique_dates) - 1,
+        ),
+    )
+
+    check_start = unique_dates[cutoff]
+
+    fit_ids = oof_dates.index[
+        oof_dates < check_start
+    ].to_numpy()
+
+    check_ids = oof_dates.index[
+        oof_dates >= check_start
+    ].to_numpy()
 
     candidate_layers = [(4,), (8,), (8, 4)]
     best_layers = None
